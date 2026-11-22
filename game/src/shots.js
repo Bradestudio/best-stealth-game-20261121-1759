@@ -53,6 +53,10 @@ export function stageShot(name, game) {
     if (cam) {
       cam.angle = Math.PI / 2 + 0.6;
       cam.suspicion = 82;
+      // Kamera sudah membunyikan alarm dan memanggil guard ke titik ini:
+      // guard kedua sedang memeriksa lastSeen kamera.
+      cam.lastSeen = { x: 520, y: 470 };
+      cam.dispatched = true;
     }
     const g2 = game.guards[1];
     g2.x = 1080;
@@ -60,11 +64,12 @@ export function stageShot(name, game) {
     g2.angle = Math.PI;
     g2.suspicion = 55;
     g2.state = 'investigate';
-    g2.investigate = { x: 980, y: 560 };
+    g2.investigate = { x: 520, y: 470 };
     state.artifacts = 3;
     state.score = 1150;
     state.time = 132;
     game.maxSuspicion = 96;
+    game.levelAlarm = false;
     game.screen = SCREEN_PLAY;
     return;
   }
@@ -76,9 +81,11 @@ export function stageShot(name, game) {
     game.player.y = 620;
     game.player.angle = Math.PI;
     state.artifacts = 11;
-    state.score = 2840;
+    state.score = 3240;
     state.time = 318;
     game.maxSuspicion = 12;
+    game.levelGrade = 'HANTU';
+    game.grades = ['HANTU', 'BAYANGAN', 'HANTU'];
     game.screen = SCREEN_WIN;
     return;
   }

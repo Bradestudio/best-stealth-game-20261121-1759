@@ -2,7 +2,7 @@
 // Lantai museum malam, kolam cahaya, vision cone transparan, HUD besar yang
 // terbaca saat diperkecil, dan layar title / menang / tertangkap.
 import { VIEW_W, VIEW_H, HUD_H, COLORS, DETECT, LEVELS } from './config.js';
-import { guardConeColor } from './guards.js';
+import { guardConeColor, stealthGrade } from './guards.js';
 
 export const SCREEN_TITLE = 'title';
 export const SCREEN_PLAY = 'play';
@@ -32,12 +32,64 @@ export function drawWorld(ctx, game, time) {
   drawCovers(ctx, world);
   drawWalls(ctx, world);
   drawDoors(ctx, world);
+  drawNightLight(ctx, game);
   drawCones(ctx, guards);
   drawGuards(ctx, guards, time);
   drawPlayer(ctx, player, time);
   drawNoiseRing(ctx, player);
   drawHud(ctx, game);
   drawHints(ctx, game);
+}
+
+// Pencahayaan malam sinematik: satu mask offscreen digelapkan, lalu dilubangi
+// cahaya radial di sekitar pemain, di ujung cone tiap guard, di relik, dan di
+// pintu keluar — plus vignette di tepinya. Mask digambar sebelum cone/guard/
+// pemain supaya mereka tetap terang dan terbaca, sementara lantainya tenggelam
+// dalam gelap. Murah: satu canvas 1280x720 yang dipakai ulang tiap frame.
+let lightMask = null;
+let lightMaskCtx = null;
+
+function lightHole(mctx, x, y, radius, strength) {
+  const g = mctx.createRadialGradient(x, y, 4, x, y, radius);
+  g.addColorStop(0, `rgba(0,0,0,${strength})`);
+  g.addColorStop(0.55, `rgba(0,0,0,${strength * 0.6})`);
+  g.addColorStop(1, 'rgba(0,0,0,0)');
+  mctx.fillStyle = g;
+  mctx.beginPath();
+  mctx.arc(x, y, radius, 0, Math.PI * 2);
+  mctx.fill();
+}
+
+function drawNightLight(ctx, game) {
+  if (!lightMask) {
+    lightMask = document.createElement('canvas');
+    lightMask.width = VIEW_W;
+    lightMask.height = VIEW_H;
+    lightMaskCtx = lightMask.getContext('2d');
+  }
+  const m = lightMaskCtx;
+  m.setTransform(1, 0, 0, 1, 0, 0);
+  m.globalCompositeOperation = 'source-over';
+  m.clearRect(0, 0, VIEW_W, VIEW_H);
+  m.fillStyle = 'rgba(5, 7, 18, 0.58)';
+  m.fillRect(0, HUD_H, VIEW_W, VIEW_H - HUD_H);
+  // Lubangi kegelapan dengan cahaya.
+  m.globalCompositeOperation = 'destination-out';
+  const { player, guards, world } = game;
+  lightHole(m, player.x, player.y, 200, 0.95);
+  for (const g of guards) {
+    const range = g.kind === 'camera' ? g.range : 245;
+    lightHole(m, g.x + Math.cos(g.angle) * range * 0.72, g.y + Math.sin(g.angle) * range * 0.72, 110, 0.8);
+  }
+  if (!world.relicTaken) lightHole(m, world.relic.x, world.relic.y, 110, 0.85);
+  lightHole(m, world.exit.x + world.exit.w / 2, world.exit.y + world.exit.h / 2, 100, 0.7);
+  ctx.drawImage(lightMask, 0, 0);
+  // Vignette: tepi layar makin gelap, mata tertuju ke tengah.
+  const v = ctx.createRadialGradient(VIEW_W / 2, VIEW_H / 2, VIEW_H * 0.42, VIEW_W / 2, VIEW_H / 2, VIEW_H * 0.95);
+  v.addColorStop(0, 'rgba(0,0,0,0)');
+  v.addColorStop(1, 'rgba(0,0,0,0.38)');
+  ctx.fillStyle = v;
+  ctx.fillRect(0, HUD_H, VIEW_W, VIEW_H - HUD_H);
 }
 
 function drawFloor(ctx, time) {
@@ -426,6 +478,13 @@ function drawHints(ctx, game) {
   ctx.fillStyle = 'rgba(245, 234, 210, 0.85)';
   ctx.font = '15px sans-serif';
   ctx.fillText('WASD/Panah gerak · Shift mengendap · Lari berisik · R ulang · P jeda · M suara', 18, VIEW_H - 24);
+  // Grade stealth berjalan: HANTU selama tak pernah terlihat, turun begitu ketahuan.
+  const grade = stealthGrade(game.maxSuspicion, game.levelAlarm);
+  ctx.textAlign = 'right';
+  ctx.fillStyle = grade === 'HANTU' ? '#ffd94d' : grade === 'BAYANGAN' ? '#f07828' : '#ff5a4d';
+  ctx.font = 'bold 15px sans-serif';
+  ctx.fillText(`Grade: ${grade}`, VIEW_W - 18, VIEW_H - 24);
+  ctx.textAlign = 'left';
   if (state.flash) {
     ctx.textAlign = 'center';
     ctx.fillStyle = state.flashColor || '#ffd94d';
@@ -474,14 +533,15 @@ export function drawTitle(ctx, game) {
   const lines = [
     'WASD / Panah — bergerak      Shift — mengendap (senyap, sulit terlihat)',
     'Lari — cepat tapi berisik, guard mendengar      R — ulang level      P — jeda      M — suara',
+    'Kamera yang membunyikan alarm memanggil guard terdekat · Selesai tanpa terlihat: grade HANTU +400',
   ];
   ctx.fillStyle = COLORS.text;
   ctx.font = '19px sans-serif';
-  lines.forEach((l, i) => ctx.fillText(l, VIEW_W / 2, 360 + i * 30));
+  lines.forEach((l, i) => ctx.fillText(l, VIEW_W / 2, 352 + i * 28));
   if (game.best > 0) {
     ctx.fillStyle = '#ffd94d';
     ctx.font = 'bold 20px sans-serif';
-    ctx.fillText(`Skor terbaik: ${game.best}`, VIEW_W / 2, 440);
+    ctx.fillText(`Skor terbaik: ${game.best}`, VIEW_W / 2, 444);
   }
   bigButton(ctx, { x: VIEW_W / 2 - 160, y: 470, w: 320, h: 64 }, '▶  MULAI MENCURI');
   ctx.fillStyle = COLORS.muted;
@@ -501,10 +561,20 @@ export function drawLevelDone(ctx, game) {
   ctx.fillText(`${game.world.def.name} — tanpa tertangkap`, VIEW_W / 2, 310);
   ctx.font = '22px sans-serif';
   ctx.fillText(`Skor: ${game.state.score}   ·   Artefak: ${game.state.artifacts}   ·   Waktu: ${formatTime(game.state.time)}`, VIEW_W / 2, 350);
-  bigButton(ctx, { x: VIEW_W / 2 - 160, y: 400, w: 320, h: 64 }, 'LEVEL BERIKUTNYA ▶');
+  ctx.font = 'bold 24px sans-serif';
+  ctx.fillStyle = game.levelGrade === 'HANTU' ? '#ffd94d' : game.levelGrade === 'BAYANGAN' ? '#f07828' : '#ff5a4d';
+  ctx.fillText(gradeLine(game.levelGrade), VIEW_W / 2, 384);
+  bigButton(ctx, { x: VIEW_W / 2 - 160, y: 420, w: 320, h: 64 }, 'LEVEL BERIKUTNYA ▶');
   ctx.fillStyle = COLORS.muted;
   ctx.font = '16px sans-serif';
-  ctx.fillText('atau tekan Enter', VIEW_W / 2, 490);
+  ctx.fillText('atau tekan Enter', VIEW_W / 2, 510);
+}
+
+function gradeLine(grade) {
+  if (grade === 'HANTU') return 'Grade HANTU — tak pernah terlihat! Bonus hantu +400.';
+  if (grade === 'BAYANGAN') return 'Grade BAYANGAN — pernah dicurigai, tapi alarm tak bunyi.';
+  if (grade === 'TERLIHAT') return 'Grade TERLIHAT — alarm sempat bunyi. Coba lagi lebih senyap.';
+  return '';
 }
 
 export function drawCaught(ctx, game) {
@@ -541,11 +611,17 @@ export function drawWin(ctx, game) {
   ctx.fillStyle = COLORS.text;
   ctx.font = '22px sans-serif';
   ctx.fillText(`Artefak: ${game.state.artifacts}   ·   Waktu total: ${formatTime(game.state.time)}`, VIEW_W / 2, 380);
-  ctx.fillText('Terima kasih sudah bermain BAYANG SENJA.', VIEW_W / 2, 415);
-  bigButton(ctx, { x: VIEW_W / 2 - 160, y: 450, w: 320, h: 64 }, '↻  MAIN LAGI');
+  const grades = game.grades && game.grades.length ? game.grades : (game.levelGrade ? [game.levelGrade] : []);
+  ctx.font = 'bold 22px sans-serif';
+  ctx.fillStyle = '#ffd94d';
+  ctx.fillText(grades.length ? `Grade per level: ${grades.map((g, i) => `L${i + 1} ${g}`).join('  ·  ')}` : '', VIEW_W / 2, 414);
+  ctx.fillStyle = COLORS.text;
+  ctx.font = '22px sans-serif';
+  ctx.fillText('Terima kasih sudah bermain BAYANG SENJA.', VIEW_W / 2, 446);
+  bigButton(ctx, { x: VIEW_W / 2 - 160, y: 478, w: 320, h: 64 }, '↻  MAIN LAGI');
   ctx.fillStyle = COLORS.muted;
   ctx.font = '16px sans-serif';
-  ctx.fillText('atau tekan Enter', VIEW_W / 2, 540);
+  ctx.fillText('atau tekan Enter', VIEW_W / 2, 568);
 }
 
 export function drawPaused(ctx, game) {
@@ -560,7 +636,7 @@ export function drawPaused(ctx, game) {
 }
 
 export function titleButton() { return { x: VIEW_W / 2 - 160, y: 470, w: 320, h: 64 }; }
-export function levelDoneButton() { return { x: VIEW_W / 2 - 160, y: 400, w: 320, h: 64 }; }
+export function levelDoneButton() { return { x: VIEW_W / 2 - 160, y: 420, w: 320, h: 64 }; }
 export function caughtButton() { return { x: VIEW_W / 2 - 160, y: 400, w: 320, h: 64 }; }
-export function winButton() { return { x: VIEW_W / 2 - 160, y: 450, w: 320, h: 64 }; }
+export function winButton() { return { x: VIEW_W / 2 - 160, y: 478, w: 320, h: 64 }; }
 export { LEVELS };
