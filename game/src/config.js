@@ -77,7 +77,7 @@ export const LEVELS = [
   },
   {
     name: 'LEVEL 2 — SAYAP KACA',
-    hint: 'Kamera menyapu koridor. Lari itu berisik — mengendaplah.',
+    hint: 'Kamera menyapu koridor. Kalau alarm kamera bunyi, guard terdekat dikirim memeriksa titik terakhir yang kamera lihat.',
     playerStart: { x: 90, y: 630 },
     relic: { x: 640, y: 150 },
     exit: { x: 1170, y: 120, w: 84, h: 76 },
@@ -176,7 +176,7 @@ export const LEVELS = [
   },
 ];
 
-export const SCORES = { artifact: 150, relic: 500, levelBonus: 300 };
+export const SCORES = { artifact: 150, relic: 500, levelBonus: 300, ghostBonus: 400 };
 export const DETECT = {
   coneRange: 245,
   coneHalfAngle: 0.58,

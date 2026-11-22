@@ -3,7 +3,7 @@
 // Mode screenshot (?shot=...) membekukan dunia supaya frame deterministik.
 import { VIEW_W, VIEW_H, LEVELS, SCORES, DETECT } from './config.js';
 import { buildLevel } from './world.js';
-import { createGuards, updateGuard } from './guards.js';
+import { createGuards, updateGuard, dispatchCameraAlerts, stealthGrade } from './guards.js';
 import { createPlayer, updatePlayer, collectPickups, atExit } from './player.js';
 import {
   ensureAudio, toggleMute, playStep, playSpotted, playAlarm, playArtifact,
@@ -42,6 +42,9 @@ const game = {
   player: null,
   state: { score: 0, artifacts: 0, time: 0, flash: '', flashColor: '#ffd94d', flashTimer: 0 },
   maxSuspicion: 0,
+  levelAlarm: false,
+  levelGrade: null,
+  grades: [],
   best: 0,
   paused: false,
   shotMode: false,
@@ -52,6 +55,8 @@ const game = {
     this.guards = createGuards(LEVELS[index]);
     this.player = createPlayer(this.world);
     this.maxSuspicion = 0;
+    this.levelAlarm = false;
+    this.levelGrade = null;
   },
 };
 
@@ -65,6 +70,7 @@ function startGame() {
   game.state.score = 0;
   game.state.artifacts = 0;
   game.state.time = 0;
+  game.grades = [];
   game.loadLevel(0);
   game.screen = SCREEN_PLAY;
   game.paused = false;
@@ -92,7 +98,8 @@ function retryLevel() {
 function handleEvents(events) {
   for (const e of events) {
     if (e === 'spotted') { playSpotted(); flash('DICURIGAI!', '#f07828'); }
-    if (e === 'alarm') { playAlarm(); flash('ALARM! SEMBUNYI!', '#ff5a4d'); }
+    if (e === 'alarm') { game.levelAlarm = true; playAlarm(); flash('ALARM! SEMBUNYI!', '#ff5a4d'); }
+    if (e === 'dispatch') { flash('KAMERA MEMANGGIL GUARD!', '#f07828'); }
     if (e === 'artifact') playArtifact();
     if (e === 'relic') { playRelic(); flash('PERMATA DIDAPAT! MENUJU KELUAR!', '#ffd94d'); }
     if (e === 'key') { playKey(); flash('KUNCI DIDAPAT — PINTU TERBUKA!', '#ffd94d'); }
@@ -111,6 +118,7 @@ function update(dt) {
   if (game.player.stepped) playStep(game.player.running);
   const events = [];
   for (const g of game.guards) updateGuard(game.world, g, game.player, dt, events);
+  dispatchCameraAlerts(game.guards, events);
   game.maxSuspicion = Math.max(0, ...game.guards.map((g) => g.suspicion));
   handleEvents(events);
   handleEvents(collectPickups(game.world, game.player, game.state));
@@ -124,7 +132,12 @@ function update(dt) {
     }
   }
   // Menang level: relik di tangan dan mencapai pintu keluar.
+  // Grade stealth level ini dinilai sekarang, sebelum layar hasil:
+  // HANTU (+400) kalau tak pernah terlihat sama sekali.
   if (game.player.hasRelic && atExit(game.world, game.player)) {
+    game.levelGrade = stealthGrade(game.maxSuspicion, game.levelAlarm);
+    if (game.levelGrade === 'HANTU') game.state.score += SCORES.ghostBonus;
+    game.grades.push(game.levelGrade);
     if (game.levelIndex + 1 >= LEVELS.length) {
       game.state.score += SCORES.levelBonus;
       game.screen = SCREEN_WIN;

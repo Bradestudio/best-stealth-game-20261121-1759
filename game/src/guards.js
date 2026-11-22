@@ -43,6 +43,7 @@ export function createGuards(levelDef) {
       lostTimer: 0,
       investigate: null,
       hearing: null,
+      dispatched: false,
     });
   }
   return guards;
@@ -199,6 +200,49 @@ function stepToward(world, g, tx, ty, step) {
   const blocked = (x, y) => solids.some((r) => x > r.x - 10 && x < r.x + r.w + 10 && y > r.y - 10 && y < r.y + r.h + 10);
   if (!blocked(nx, g.y)) g.x = nx;
   if (!blocked(g.x, ny)) g.y = ny;
+}
+
+// Grade stealth satu level, dari curiga tertinggi dan apakah alarm pernah bunyi:
+// HANTU = tak pernah terlihat sama sekali (curiga puncak di bawah ambang curiga),
+// BAYANGAN = pernah dicurigai tapi alarm tak pernah bunyi,
+// TERLIHAT = alarm pernah bunyi.
+export function stealthGrade(maxSuspicion, alarmed) {
+  if (alarmed) return 'TERLIHAT';
+  if (maxSuspicion >= DETECT.suspiciousAt) return 'BAYANGAN';
+  return 'HANTU';
+}
+
+// Dispatch kamera: saat kamera mencapai alarm, guard berjalan terdekat yang belum
+// alert dikirim menginvestigasi titik terakhir yang kamera lihat. Kamera sendiri
+// tetap diam di tempatnya — ia memanggil, bukan mengejar. Sekali per alarm:
+// flag dispatched direset begitu suspicion kamera turun di bawah ambang alarm,
+// supaya alarm berikutnya bisa memanggil lagi.
+export function dispatchCameraAlerts(guards, events) {
+  for (const cam of guards) {
+    if (cam.kind !== 'camera') continue;
+    if (cam.suspicion < DETECT.alertAt) {
+      cam.dispatched = false;
+      continue;
+    }
+    if (cam.dispatched || !cam.lastSeen) continue;
+    let best = null;
+    let bestDist = Infinity;
+    for (const g of guards) {
+      if (g.kind !== 'guard' || g.state === 'alert') continue;
+      const d = Math.hypot(g.x - cam.lastSeen.x, g.y - cam.lastSeen.y);
+      if (d < bestDist) {
+        bestDist = d;
+        best = g;
+      }
+    }
+    if (!best) continue;
+    best.state = 'investigate';
+    best.investigate = { ...cam.lastSeen };
+    best.suspicion = Math.max(best.suspicion, 45);
+    best.wait = 0;
+    cam.dispatched = true;
+    events.push('dispatch');
+  }
 }
 
 // Warna cone mengikuti keadaan guard yang paling curiga.
