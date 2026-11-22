@@ -604,7 +604,7 @@ export function drawWin(ctx, game) {
   ctx.fillText('MISI SELESAI!', VIEW_W / 2, 230);
   ctx.fillStyle = COLORS.text;
   ctx.font = 'bold 28px sans-serif';
-  ctx.fillText('Kala menghilang ke dalam senja dengan ketiga Permata. Tak satu pun guard melihatnya.', VIEW_W / 2, 282);
+  ctx.fillText('Kala menghilang ke dalam senja dengan ketiga Permata.', VIEW_W / 2, 282);
   ctx.font = 'bold 26px sans-serif';
   ctx.fillStyle = '#ffd94d';
   ctx.fillText(`SKOR AKHIR: ${game.state.score}`, VIEW_W / 2, 340);
